@@ -4,6 +4,184 @@ import openai
 from flask_cors import CORS
 import requests, csv, math
 from io import StringIO
+# Add these imports to your app.py
+import os
+import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from flask import request, jsonify
+
+# Add this route to your Flask app
+@app.route('/send-email', methods=['POST'])
+def send_email():
+    try:
+        # Get request data
+        data = request.json
+        
+        # Extract data
+        to_email = data.get('to', 'info@surprisegranite.com')
+        subject = data.get('subject', 'New Countertop Estimate Request')
+        customer_name = data.get('customerName')
+        customer_email = data.get('customerEmail')
+        customer_phone = data.get('customerPhone', 'Not provided')
+        customer_message = data.get('customerMessage', 'No additional message')
+        estimate_details = data.get('estimateDetails', {})
+        website_source = data.get('websiteSource', 'Website')
+        
+        # Validate required fields
+        if not customer_name or not customer_email or not estimate_details:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Create HTML for company email
+        company_html = f"""
+        <h2>New Countertop Estimate Request</h2>
+        <h3>Customer Information:</h3>
+        <p><strong>Name:</strong> {customer_name}</p>
+        <p><strong>Email:</strong> {customer_email}</p>
+        <p><strong>Phone:</strong> {customer_phone}</p>
+        <p><strong>Message:</strong> {customer_message}</p>
+        <p><strong>Source:</strong> {website_source}</p>
+        
+        <h3>Estimate Details:</h3>
+        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
+            <tr>
+                <th style="text-align: left; background-color: #f2f2f2;">Item</th>
+                <th style="text-align: left; background-color: #f2f2f2;">Details</th>
+            </tr>
+            <tr>
+                <td><strong>Material</strong></td>
+                <td>{estimate_details.get('material', 'N/A')} ({estimate_details.get('quality', 'N/A')})</td>
+            </tr>
+            <tr>
+                <td><strong>Square Feet</strong></td>
+                <td>{estimate_details.get('squareFeet', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Edge Treatment</strong></td>
+                <td>{estimate_details.get('edge', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Sink Cutouts</strong></td>
+                <td>{estimate_details.get('sinks', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Material Cost</strong></td>
+                <td>{estimate_details.get('materialCost', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Edge Cost</strong></td>
+                <td>{estimate_details.get('edgeCost', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Sink Cost</strong></td>
+                <td>{estimate_details.get('sinkCost', 'N/A')}</td>
+            </tr>
+            <tr style="font-weight: bold; background-color: #f9f9f9;">
+                <td><strong>Total Estimate</strong></td>
+                <td>{estimate_details.get('totalCost', 'N/A')}</td>
+            </tr>
+        </table>
+        """
+        
+        # Create HTML for customer email
+        customer_html = f"""
+        <h2>Your Surprise Granite Countertop Estimate</h2>
+        <p>Dear {customer_name},</p>
+        <p>Thank you for your interest in Surprise Granite! We've received your estimate request and one of our specialists will contact you shortly to discuss your project in detail.</p>
+        
+        <h3>Your Estimate Details:</h3>
+        <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
+            <tr>
+                <th style="text-align: left; background-color: #f2f2f2;">Item</th>
+                <th style="text-align: left; background-color: #f2f2f2;">Details</th>
+            </tr>
+            <tr>
+                <td><strong>Material</strong></td>
+                <td>{estimate_details.get('material', 'N/A')} ({estimate_details.get('quality', 'N/A')})</td>
+            </tr>
+            <tr>
+                <td><strong>Square Feet</strong></td>
+                <td>{estimate_details.get('squareFeet', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Edge Treatment</strong></td>
+                <td>{estimate_details.get('edge', 'N/A')}</td>
+            </tr>
+            <tr>
+                <td><strong>Sink Cutouts</strong></td>
+                <td>{estimate_details.get('sinks', 'N/A')}</td>
+            </tr>
+            <tr style="font-weight: bold; background-color: #f9f9f9;">
+                <td><strong>Total Estimate</strong></td>
+                <td>{estimate_details.get('totalCost', 'N/A')}</td>
+            </tr>
+        </table>
+        
+        <p><em>Please note: This is a preliminary estimate based on the information provided. Your final quote may vary based on specific project requirements and material selection.</em></p>
+        
+        <p>If you have any questions or would like to schedule a consultation, please contact us at:</p>
+        <p>Phone: (623) 214-3599<br>
+        Email: info@surprisegranite.com</p>
+        
+        <p>Thank you for choosing Surprise Granite!</p>
+        <p>The Surprise Granite Team</p>
+        """
+        
+        # Email configuration
+        email_host = os.environ.get('EMAIL_HOST')
+        email_port = int(os.environ.get('EMAIL_PORT', 587))
+        email_user = os.environ.get('EMAIL_USER')
+        email_pass = os.environ.get('EMAIL_PASS')
+        email_from = os.environ.get('EMAIL_FROM', 'Surprise Granite <info@surprisegranite.com>')
+        
+        # Send email to company
+        send_html_email(
+            sender=email_from,
+            recipient=to_email,
+            subject=subject,
+            html_content=company_html,
+            smtp_server=email_host,
+            smtp_port=email_port,
+            smtp_user=email_user,
+            smtp_pass=email_pass
+        )
+        
+        # Send confirmation email to customer
+        send_html_email(
+            sender=email_from,
+            recipient=customer_email,
+            subject='Your Surprise Granite Countertop Estimate',
+            html_content=customer_html,
+            smtp_server=email_host,
+            smtp_port=email_port,
+            smtp_user=email_user,
+            smtp_pass=email_pass
+        )
+        
+        return jsonify({'success': True, 'message': 'Emails sent successfully'}), 200
+        
+    except Exception as e:
+        print(f"Email error: {str(e)}")
+        return jsonify({'error': 'Failed to send email', 'details': str(e)}), 500
+
+# Helper function to send HTML emails
+def send_html_email(sender, recipient, subject, html_content, smtp_server, smtp_port, smtp_user, smtp_pass):
+    # Create message
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = sender
+    msg['To'] = recipient
+    
+    # Attach HTML content
+    html_part = MIMEText(html_content, 'html')
+    msg.attach(html_part)
+    
+    # Send email
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
 
 app = Flask(__name__)
 
